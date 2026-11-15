@@ -693,10 +693,24 @@
       // calculator displays a single estimated total only.
       // ============================================================
       var CONFIG = {
-        // Internal shop rate basis, in dollars per hour of print time.
-        SHOP_RATE_PER_HOUR: 57,
+        // Machine rate — electricity + machine maintenance/depreciation
+        // only. Owner-set at $3 per hour of print time. Printers run
+        // unattended, so machine time is NOT billed at the labor rate.
+        MACHINE_RATE_PER_HOUR: 3,
 
-        // Finish quality multipliers applied to the internal base.
+        // Labor rate — $57 per hour, applied ONLY to human handling time
+        // (file check, setup, removal, inspection), never to print hours.
+        LABOR_RATE_PER_HOUR: 57,
+
+        // Human handling allowance per job, in hours.
+        HANDLING_HOURS: 0.5,
+
+        // Shape factor: a typical part fills about a quarter of its
+        // bounding box; the rest is air / hollow interior.
+        SHAPE_FACTOR: 0.25,
+
+        // Finish quality multipliers — applied to the LABOR portion
+        // only, never to material or machine costs.
         TIER_MULTIPLIERS: { draft: 2, standard: 2.5, fine: 3 },
 
         // Internal material cost in dollars per gram.
@@ -727,11 +741,13 @@
         // of the part's bounding-box volume is actually material.
         STRUCTURAL_FILL_FACTOR: { light: 0.18, standard: 0.35, heavy: 0.60 },
 
-        // Internal print speed assumption, in grams per hour.
-        GRAMS_PER_HOUR: 18,
+        // Internal print throughput assumption, in grams per hour.
+        GRAMS_PER_HOUR: 25,
 
-        // Timeframe multipliers. Shipping area never changes the
-        // estimate — shipping is confirmed in the written quote.
+        // Timeframe multipliers — applied to the LABOR portion only,
+        // never to material or machine costs. Shipping area never
+        // changes the estimate — shipping is confirmed in the
+        // written quote.
         TIMEFRAME_MULTIPLIERS: { standard: 1, fast: 1.25, rush: 1.5 },
 
         // Quantity discount brackets: [minimum quantity, discount fraction].
@@ -817,16 +833,30 @@
         var shipping = calcEls.shipping.value;
 
         // Internal estimate math — never rendered.
+        // grams = bounding-box volume × shape factor × material density
+        //         × structural fill factor
+        // print hours = grams ÷ throughput
+        // material cost = grams × per-gram material rate
+        // machine cost = print hours × machine rate (electricity +
+        //                maintenance/depreciation only)
+        // labor = handling hours × labor rate × finish tier × timeframe
+        //         multiplier (tiers and rush multiply labor ONLY,
+        //         never material or machine)
+        // total = material cost + machine cost + labor
+        // Shipping area does not change the number.
         var volumeCm3 = (L / 10) * (W / 10) * (H / 10);
         var grams = volumeCm3 *
+          CONFIG.SHAPE_FACTOR *
           (CONFIG.MATERIAL_DENSITY_G_PER_CM3[material] || 1.24) *
           CONFIG.STRUCTURAL_FILL_FACTOR[structuralKey];
         var hours = grams / CONFIG.GRAMS_PER_HOUR;
-        var base = hours * CONFIG.SHOP_RATE_PER_HOUR +
-          grams * (CONFIG.MATERIAL_RATE_PER_GRAM[material] || 0);
-        var total = base *
+        var materialCost = grams * (CONFIG.MATERIAL_RATE_PER_GRAM[material] || 0);
+        var machineCost = hours * CONFIG.MACHINE_RATE_PER_HOUR;
+        var labor = CONFIG.HANDLING_HOURS *
+          CONFIG.LABOR_RATE_PER_HOUR *
           CONFIG.TIER_MULTIPLIERS[finishKey] *
           CONFIG.TIMEFRAME_MULTIPLIERS[timeframeKey];
+        var total = materialCost + machineCost + labor;
         var rounded = Math.round(total);
         var totalLabel = "$" + rounded.toLocaleString("en-US");
 
